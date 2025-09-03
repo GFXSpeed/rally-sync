@@ -214,6 +214,7 @@ If you don’t see the command, **restart Discord**.
 
 ## 🛑 **Known Issues**
 - If **CPU performance is low**, countdowns may **go out of sync**. Consider running the bot on a **dedicated server**.
+- The bot might randomly leave discord, pulling the discord package straight from git fixes it: `pip3 install --no-cache-dir --upgrade "git+https://github.com/Rapptz/discord.py.git"`
 
 ---
 
