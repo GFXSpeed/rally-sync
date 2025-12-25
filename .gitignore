@@ -1,0 +1,46 @@
+# Gitignore for vite-react in "activity" folder
+# =========================
+# Dependencies
+# =========================
+activity/node_modules/
+activity/web/node_modules/
+
+# =========================
+# Build output
+# =========================
+activity/web/dist/
+activity/web/dist-ssr/
+activity/.wrangler/
+activity/worker/.wrangler/
+
+# =========================
+# Vite cache
+# =========================
+activity/.vite/
+
+# =========================
+# Environment variables
+# =========================
+activity/.env
+activity/.env.*
+!activity/.env.example
+
+# =========================
+# Logs
+# =========================
+*.log
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================
+# OS
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
