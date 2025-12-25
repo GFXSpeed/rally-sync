@@ -13,6 +13,7 @@ export interface Rally {
 export interface RoomState {
   players: Player[];
   rally: Rally | null;
+  lastActiveAt: number;
 }
 
 type ClientMsg =
@@ -25,7 +26,7 @@ type ClientMsg =
 
 type ServerMsg = { type: "STATE"; payload: RoomState };
 
-const DEFAULT_STATE: RoomState = { players: [], rally: null };
+const DEFAULT_STATE: RoomState = { players: [], rally: null, lastActiveAt: Date.now() };
 
 function jsonResponse(obj: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(obj), {
@@ -50,7 +51,21 @@ export class RallyRoom {
   async ensureLoaded() {
     if (this.data) return;
     const stored = await this.state.storage.get<RoomState>("state");
-    this.data = stored ?? { ...DEFAULT_STATE };
+    const now = Date.now();
+    const MAX_AGE_MS = 6 * 60 * 60 * 1000; // Safe session for max 6 hours
+
+    if (stored) {
+      // too old, reset
+      if (!stored.lastActiveAt || now - stored.lastActiveAt > MAX_AGE_MS) {
+        this.data = { ...DEFAULT_STATE, lastActiveAt: now };
+        await this.persist();
+      } else {
+        this.data = stored;
+      }
+    } else {
+      this.data = { ...DEFAULT_STATE, lastActiveAt: now };
+      await this.persist();
+    }
   }
 
   async persist() {
@@ -74,6 +89,8 @@ export class RallyRoom {
   async handleMessage(ws: WebSocket, raw: string) {
     await this.ensureLoaded();
     if (!this.data) return;
+
+    this.data.lastActiveAt = Date.now();
 
     let msg: ClientMsg;
     try {
