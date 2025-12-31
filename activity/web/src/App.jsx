@@ -311,6 +311,12 @@ export function RallyApp() {
   useEffect(() => {
     const socket = new WebSocket(wsUrl);
     let syncInterval = null;
+      
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        runSyncBurst(socket);
+      }
+    };
 
     const handleOpen = () => {socket.send(JSON.stringify({ type: "STATE_REQUEST", roomId }));
       runSyncBurst(socket);
@@ -336,12 +342,14 @@ export function RallyApp() {
     socket.addEventListener("open", handleOpen);
     socket.addEventListener("message", handleMessage);
     socket.addEventListener("error", () => {});
+    document.addEventListener("visibilitychange", handleVisibility);
     setWs(socket);
 
     return () => {
       if (syncInterval) window.clearInterval(syncInterval);
       socket.removeEventListener("open", handleOpen);
       socket.removeEventListener("message", handleMessage);
+      document.removeEventListener("visibilitychange", handleVisibility);
       socket.close();
     };
   }, []);
@@ -470,7 +478,7 @@ export function RallyApp() {
   const effectiveOnlySelected = selectedIds.length > 0;
   const syncFreshMs = 60000;
   const isSynced = lastSyncAt && Date.now() - lastSyncAt < syncFreshMs;
-  const syncLabel = isSynced ? "Synced" : "Syncing";
+  const syncLabel = isSynced ? "Live" : "Syncing";
 
   useEffect(() => {
     if (!ttsEnabled) return;
@@ -550,7 +558,7 @@ export function RallyApp() {
         </div>
         <div className={`chip ${isSynced ? "ok" : "warn"}`} title={`Clock offset: ${Math.round(timeOffsetMs)} ms, RTT: ${bestRttMs ?? "?"} ms`}>
           <span className="dot" />
-          Live. {syncLabel}
+          {syncLabel}
         </div>
       </header>
 
