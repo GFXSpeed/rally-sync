@@ -13,6 +13,14 @@ const wsUrl = (() => {
 const SYNC_SAMPLE_COUNT = 6;
 const SYNC_INTERVAL_MS = 10000; // every 10 seconds
 
+const isEmbedded = (() => {
+  try {
+    return window.top !== window.self;
+  } catch {
+    return true;
+  }
+})();
+
 function navigateToRoom(id) {
   const url = new URL(window.location.href);
   url.searchParams.set("instance_id", id);
@@ -21,6 +29,12 @@ function navigateToRoom(id) {
 
 function createRandomRoomId() {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+
+function leaveRoom() {
+  const url = new URL(window.location.href);
+  url.searchParams.delete("instance_id");
+  window.location.href = url.toString();
 }
 
 function pad2(n) {
@@ -556,9 +570,16 @@ export function RallyApp() {
             Time is shown in UTC
           </div>
         </div>
-        <div className={`chip ${isSynced ? "ok" : "warn"}`} title={`Clock offset: ${Math.round(timeOffsetMs)} ms, RTT: ${bestRttMs ?? "?"} ms`}>
-          <span className="dot" />
-          {syncLabel}
+        <div className="headerActions">
+          {!isEmbedded && (
+            <button className="btn ghost leaveBtn" type="button" onClick={leaveRoom}>
+              Leave Room
+            </button>
+          )}
+          <div className={`chip ${isSynced ? "ok" : "warn"}`} title={`Clock offset: ${Math.round(timeOffsetMs)} ms, RTT: ${bestRttMs ?? "?"} ms`}>
+            <span className="dot" />
+            {syncLabel}
+          </div>
         </div>
       </header>
 
@@ -1094,6 +1115,12 @@ const css = `
     gap:16px;
     margin-bottom:18px;
   }
+    .headerActions{
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+
   .kicker{
     font-size:12px;
     letter-spacing:.16em;
@@ -1302,6 +1329,11 @@ const css = `
     border-color: rgba(255,255,255,.10);
     color: var(--muted);
   }
+
+  .btn.leaveBtn:hover{
+    background: rgba(179, 0, 0, 0.81);
+    color: white;
+  }    
 
   .seg{
     display:flex;
