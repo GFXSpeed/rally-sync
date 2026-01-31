@@ -232,7 +232,9 @@ export class RallyRoom {
 
       server.addEventListener("message", (evt) => {
         const text = typeof evt.data === "string" ? evt.data : "";
-        this.handleMessage(server, text).catch(() => {});
+        this.handleMessage(server, text).catch((err) => {
+          console.error("Failed to handle message", err);
+        });
       });
 
       const cleanup = () => {
