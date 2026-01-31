@@ -6,4 +6,4 @@ npm install
 npm run dev
 ```
 
-The UI connects to a WebSocket server at `ws://localhost:3001`.
+The UI connects to a WebSocket server at `ws://localhost:8787`.

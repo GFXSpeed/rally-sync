@@ -11,7 +11,7 @@ const wsUrl = (() => {
 })();
 
 const SYNC_SAMPLE_COUNT = 6;
-const SYNC_INTERVAL_MS = 10000; // every 10 seconds
+const SYNC_INTERVAL_MS = 5000; // every 5s
 
 const isEmbedded = (() => {
   try {
@@ -61,7 +61,7 @@ const SETTINGS_KEY = "wos-rally-local-settings-v1";
 
 function useLocalSettings() {
   const [beepLevel, setBeepLevel] = useState(70); // 0–100
-  const [ttsLevel, setTtsLevel] = useState(80);   // 0–100
+  const [ttsLevel, setTtsLevel] = useState(80); // 0–100
   const [selectedIds, setSelectedIds] = useState([]);
 
   // Load once
@@ -79,7 +79,7 @@ function useLocalSettings() {
     }
   }, []);
 
-  // Save when something changes
+  // Save on change
   useEffect(() => {
     try {
       const data = {
@@ -332,7 +332,8 @@ export function RallyApp() {
       }
     };
 
-    const handleOpen = () => {socket.send(JSON.stringify({ type: "STATE_REQUEST", roomId }));
+    const handleOpen = () => {
+      socket.send(JSON.stringify({ type: "STATE_REQUEST", roomId }));
       runSyncBurst(socket);
       syncInterval = window.setInterval(() => runSyncBurst(socket), SYNC_INTERVAL_MS);
     };
@@ -457,7 +458,7 @@ export function RallyApp() {
     const starter = state.players.find((p) => p.id === activeRally.starterId);
     if (!starter) return null;
 
-    const launchAt = activeRally.launchAt; // vom Server
+    const launchAt = activeRally.launchAt; // server timestamp
     const rallyDurationMs = Number.isFinite(activeRally.rallyDurationMs)
       ? activeRally.rallyDurationMs
       : delay * 60 * 1000;
@@ -524,8 +525,7 @@ export function RallyApp() {
     };
 
     for (const r of rallyComputed.rows) {
-      // nur selektierte Spieler, wenn entweder Toggle an ist
-      // ODER mindestens ein Spieler ausgewählt wurde
+      // Only selected players when selection is active.
       if (effectiveOnlySelected && !selectedSet.has(r.id)) {
         continue;
       }

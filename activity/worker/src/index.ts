@@ -6,7 +6,7 @@ export interface Player {
 
 export interface Rally {
   starterId: string;
-  // When the MARCH phase begins (join phase ends).
+  // UTC timestamp when the march phase begins (join phase ends).
   launchAt: number;
   rallyDurationMs: number;
   preDelayMs: number;
@@ -58,13 +58,13 @@ export class RallyRoom {
     if (this.data) return;
     const stored = await this.state.storage.get<RoomState>("state");
     const now = Date.now();
-    const MAX_AGE_MS = 6 * 60 * 60 * 1000; // Safe session for max 6 hours
+    const MAX_AGE_MS = 6 * 60 * 60 * 1000; // Expire rooms after 6 hours of inactivity.
 
     if (stored) {
       if (stored.rally && !Number.isFinite(stored.rally.arrivalAt)) {
         stored.rally = null;
       }
-      // too old, reset
+      // Reset stale rooms.
       if (!stored.lastActiveAt || now - stored.lastActiveAt > MAX_AGE_MS) {
         this.data = { ...DEFAULT_STATE, lastActiveAt: now };
         await this.persist();
@@ -90,7 +90,7 @@ export class RallyRoom {
       try {
         ws.send(text);
       } catch {
-        // ignore
+        // Ignore dead sockets.
       }
     }
   }
@@ -135,7 +135,7 @@ export class RallyRoom {
       }
       case "PLAYER_ADD": {
         if (!msg.payload || !msg.payload.id) return;
-        // Upsert by id
+        // Upsert by id.
         const idx = this.data.players.findIndex((p) => p.id === msg.payload.id);
         if (idx >= 0) this.data.players[idx] = msg.payload;
         else this.data.players.push(msg.payload);
@@ -147,7 +147,7 @@ export class RallyRoom {
         const id = msg.payload;
         if (!id) return;
         this.data.players = this.data.players.filter((p) => p.id !== id);
-        // If starter removed, end rally
+        // End rally when the starter is removed.
         if (this.data.rally && this.data.rally.starterId === id) {
           this.data.rally = null;
           await this.state.storage.deleteAlarm();
@@ -211,7 +211,7 @@ export class RallyRoom {
     await this.ensureLoaded();
     await this.maybeClearLanded();
 
-    // Simple debug endpoint
+    // Debug: current room state.
     const url = new URL(request.url);
     if (url.pathname === "/state") {
       return jsonResponse({ ok: true, state: this.data });
@@ -225,7 +225,7 @@ export class RallyRoom {
       server.accept();
       this.sockets.add(server);
 
-      // Send current state immediately
+      // Send current state immediately.
       if (this.data) {
         server.send(JSON.stringify({ type: "STATE", payload: this.data } satisfies ServerMsg));
       }
@@ -268,17 +268,17 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    // Route WS + room state through the Durable Object
+    // Route WS + room state through the Durable Object.
     if (url.pathname === "/ws" || url.pathname === "/state") {
       const room = url.searchParams.get("instance_id") || url.searchParams.get("roomId") || "local";
       const id = env.ROOM.idFromName(room);
       const stub = env.ROOM.get(id);
 
-      // Forward the same request to the DO (keep path)
+      // Forward the request to the DO (keep the path).
       return stub.fetch(request);
     }
 
-    // Serve static assets (built Vite app) from Workers Assets binding
+    // Serve static assets (built Vite app) from Workers Assets binding.
     return env.ASSETS.fetch(request);
   },
 };
