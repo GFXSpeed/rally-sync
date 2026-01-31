@@ -373,6 +373,15 @@ export function RallyApp() {
     return () => clearInterval(t);
   }, []);
 
+  useEffect(() => {
+    const rallyMs = state.rally?.rallyDurationMs;
+    if (!Number.isFinite(rallyMs)) return;
+    const minutes = Math.round(rallyMs / 60000);
+    if (minutes && minutes !== delay) {
+      setDelay(minutes);
+    }
+  }, [state.rally?.rallyDurationMs]);
+
   const canAdd =
     ws &&
     name.trim().length > 0 &&
@@ -449,12 +458,17 @@ export function RallyApp() {
     if (!starter) return null;
 
     const launchAt = activeRally.launchAt; // vom Server
-    const rallyDurationMs = delay * 60 * 1000;
+    const rallyDurationMs = Number.isFinite(activeRally.rallyDurationMs)
+      ? activeRally.rallyDurationMs
+      : delay * 60 * 1000;
     const rallyStartAt = launchAt - rallyDurationMs;
-    const arrivalAt = launchAt + starter.marchMs;
+    const arrivalAt = Number.isFinite(activeRally.arrivalAt)
+      ? activeRally.arrivalAt
+      : launchAt + starter.marchMs;
 
     const joinRemainingMs = launchAt - now;
-    const phase = joinRemainingMs > 0 ? "JOIN" : "MARCH";
+    let phase = joinRemainingMs > 0 ? "JOIN" : "MARCH";
+    if (arrivalAt <= now) phase = "LANDED";
 
     const rows = state.players
       .map((p) => {
@@ -475,6 +489,7 @@ export function RallyApp() {
           landInMs,
         };
       })
+      .filter((r) => r.landInMs >= 0)
       .sort((a, b) => a.startAt - b.startAt);
 
     return {
@@ -869,7 +884,7 @@ export function RallyApp() {
                       </div>
                       <span className="badge ok">JOIN</span>
                     </div>
-                  ) : (
+                  ) : rallyComputed.phase === "MARCH" ? (
                     <div
                       style={{
                         display: "flex",
@@ -886,6 +901,23 @@ export function RallyApp() {
                       </div>
                       <span className="badge warn">MARCH</span>
                     </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        alignItems: "center",
+                      }}
+                    >
+                      <div>
+                        <div className="metaLabel">Landed</div>
+                        <div className="metaValue mono">
+                          All marches landed at {formatTimeOfDay(rallyComputed.arrivalAt)}
+                        </div>
+                      </div>
+                      <span className="badge bad">LANDED</span>
+                    </div>
                   )}
                 </div>
               </div>
@@ -896,76 +928,82 @@ export function RallyApp() {
                 </button>
               </div>
 
-              <div className="tableWrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Player</th>
-                      <th>Rally-Start</th>
-                      <th>Countdown</th>
-                      <th>Land in</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rallyComputed.rows.map((r) => {
-                      const isJoin = rallyComputed.phase === "JOIN";
-                      const landInText =
-                        r.landInMs >= 0
-                          ? formatMs(r.landInMs)
-                          : `-${formatMs(-r.landInMs)}`;
+              {rallyComputed.phase === "LANDED" ? (
+                <div className="empty">All marches have landed. Rally will auto-clear.</div>
+              ) : rallyComputed.rows.length === 0 ? (
+                <div className="empty">No active marches left.</div>
+              ) : (
+                <div className="tableWrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Player</th>
+                        <th>Rally-Start</th>
+                        <th>Countdown</th>
+                        <th>Land in</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rallyComputed.rows.map((r) => {
+                        const isJoin = rallyComputed.phase === "JOIN";
+                        const landInText =
+                          r.landInMs >= 0
+                            ? formatMs(r.landInMs)
+                            : `-${formatMs(-r.landInMs)}`;
 
-                      let countdownText = "";
-                      if (isJoin) {
-                        if (r.diffToRallyStartMs > 0) {
-                          countdownText = `in ${formatMs(r.diffToRallyStartMs)}`;
+                        let countdownText = "";
+                        if (isJoin) {
+                          if (r.diffToRallyStartMs > 0) {
+                            countdownText = `in ${formatMs(r.diffToRallyStartMs)}`;
+                          } else {
+                            countdownText = `running ${formatMs(-r.diffToRallyStartMs)}`;
+                          }
+                          if (r.diffFromLaunchMs < 0) countdownText += ` (before March)`;
                         } else {
-                          countdownText = `running ${formatMs(-r.diffToRallyStartMs)}`;
+                          countdownText =
+                            r.diffMs > 0
+                              ? formatMs(r.diffMs)
+                              : `since ${formatMs(-r.diffMs)}`;
                         }
-                        if (r.diffFromLaunchMs < 0) countdownText += ` (before March)`;
-                      } else {
-                        countdownText =
-                          r.diffMs > 0
-                            ? formatMs(r.diffMs)
-                            : `since ${formatMs(-r.diffMs)}`;
-                      }
 
-                      let badgeClass = "ok";
-                      let badgeText = "";
+                        let badgeClass = "ok";
+                        let badgeText = "";
 
-                      if (isJoin) {
-                        if (r.diffToRallyStartMs > 0) {
-                          badgeClass = "warn";
-                          badgeText = "RALLY PENDING";
+                        if (isJoin) {
+                          if (r.diffToRallyStartMs > 0) {
+                            badgeClass = "warn";
+                            badgeText = "RALLY PENDING";
+                          } else {
+                            badgeClass = "ok";
+                            badgeText = "RALLY RUNNING";
+                          }
                         } else {
-                          badgeClass = "ok";
-                          badgeText = "RALLY RUNNING";
+                          if (r.diffMs > 0) {
+                            badgeClass = "ok";
+                            badgeText = "WAIT";
+                          } else {
+                            badgeClass = "warn";
+                            badgeText = "MARCHING";
+                          }
                         }
-                      } else {
-                        if (r.diffMs > 0) {
-                          badgeClass = "ok";
-                          badgeText = "WAIT";
-                        } else {
-                          badgeClass = "warn";
-                          badgeText = "MARCHING";
-                        }
-                      }
 
-                      return (
-                        <tr key={r.id}>
-                          <td className="strong">{r.name}</td>
-                          <td className="mono">{formatTimeOfDay(r.rallyStartAt)}</td>
-                          <td className="mono">{countdownText}</td>
-                          <td className="mono">{landInText}</td>
-                          <td>
-                            <span className={`badge ${badgeClass}`}>{badgeText}</span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                        return (
+                          <tr key={r.id}>
+                            <td className="strong">{r.name}</td>
+                            <td className="mono">{formatTimeOfDay(r.rallyStartAt)}</td>
+                            <td className="mono">{countdownText}</td>
+                            <td className="mono">{landInText}</td>
+                            <td>
+                              <span className={`badge ${badgeClass}`}>{badgeText}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </>
           ) : (
             <div className="empty">

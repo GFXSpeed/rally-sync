@@ -8,6 +8,9 @@ export interface Rally {
   starterId: string;
   // When the MARCH phase begins (join phase ends).
   launchAt: number;
+  rallyDurationMs: number;
+  preDelayMs: number;
+  arrivalAt: number;
 }
 
 export interface RoomState {
@@ -29,6 +32,7 @@ type ServerMsg = { type: "STATE"; payload: RoomState };
 type TimeSyncResponse = { type: "TIME_SYNC_RESPONSE"; payload: { t0: number; t1: number; t2: number } };
 
 const DEFAULT_STATE: RoomState = { players: [], rally: null, lastActiveAt: Date.now() };
+const AUTO_DELETE_GRACE_MS = 5000;
 
 function jsonResponse(obj: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(obj), {
@@ -57,6 +61,9 @@ export class RallyRoom {
     const MAX_AGE_MS = 6 * 60 * 60 * 1000; // Safe session for max 6 hours
 
     if (stored) {
+      if (stored.rally && !Number.isFinite(stored.rally.arrivalAt)) {
+        stored.rally = null;
+      }
       // too old, reset
       if (!stored.lastActiveAt || now - stored.lastActiveAt > MAX_AGE_MS) {
         this.data = { ...DEFAULT_STATE, lastActiveAt: now };
@@ -88,10 +95,28 @@ export class RallyRoom {
     }
   }
 
+  async maybeClearLanded() {
+    if (!this.data?.rally) return;
+    const arrivalAt = this.data.rally.arrivalAt;
+    if (!Number.isFinite(arrivalAt)) return;
+    if (arrivalAt <= Date.now()) {
+      this.data.rally = null;
+      await this.persist();
+      await this.state.storage.deleteAlarm();
+    }
+  }
+
+  async scheduleAutoCleanup(arrivalAt: number) {
+    if (!Number.isFinite(arrivalAt)) return;
+    const alarmAt = arrivalAt + AUTO_DELETE_GRACE_MS;
+    await this.state.storage.setAlarm(alarmAt);
+  }
+
   async handleMessage(ws: WebSocket, raw: string) {
     await this.ensureLoaded();
     if (!this.data) return;
 
+    await this.maybeClearLanded();
     this.data.lastActiveAt = Date.now();
 
     let msg: ClientMsg;
@@ -103,6 +128,7 @@ export class RallyRoom {
 
     switch (msg.type) {
       case "STATE_REQUEST": {
+        await this.maybeClearLanded();
         const reply: ServerMsg = { type: "STATE", payload: this.data };
         ws.send(JSON.stringify(reply));
         return;
@@ -124,6 +150,7 @@ export class RallyRoom {
         // If starter removed, end rally
         if (this.data.rally && this.data.rally.starterId === id) {
           this.data.rally = null;
+          await this.state.storage.deleteAlarm();
         }
         await this.persist();
         this.broadcast();
@@ -133,25 +160,38 @@ export class RallyRoom {
         const { starterId, launchAt, rallyDurationMs, preDelayMs } = msg.payload ?? {};
 
         if (!starterId) return;
+        const starter = this.data.players.find((p) => p.id === starterId);
+        if (!starter || !Number.isFinite(starter.marchMs)) return;
+
+        const durationMs = Number(rallyDurationMs);
+        const delayMs = Number(preDelayMs ?? 0);
+        if (!Number.isFinite(durationMs) || durationMs < 0) return;
+        if (!Number.isFinite(delayMs) || delayMs < 0) return;
+
         let computedLaunchAt = launchAt;
 
         if (typeof computedLaunchAt !== "number" || !Number.isFinite(computedLaunchAt)) {
-          const durationMs = Number(rallyDurationMs);
-          const delayMs = Number(preDelayMs ?? 0);
-          if (!Number.isFinite(durationMs) || durationMs < 0) return;
-          if (!Number.isFinite(delayMs) || delayMs < 0) return;
           computedLaunchAt = Date.now() + delayMs + durationMs;
         }
 
-        this.data.rally = { starterId, launchAt: computedLaunchAt };
+        const arrivalAt = computedLaunchAt + starter.marchMs;
+        this.data.rally = {
+          starterId,
+          launchAt: computedLaunchAt,
+          rallyDurationMs: durationMs,
+          preDelayMs: delayMs,
+          arrivalAt,
+        };
 
         await this.persist();
+        await this.scheduleAutoCleanup(arrivalAt);
         this.broadcast();
         return;
       }
       case "RALLY_END": {
         this.data.rally = null;
         await this.persist();
+        await this.state.storage.deleteAlarm();
         this.broadcast();
         return;
       }
@@ -169,6 +209,7 @@ export class RallyRoom {
 
   async fetch(request: Request): Promise<Response> {
     await this.ensureLoaded();
+    await this.maybeClearLanded();
 
     // Simple debug endpoint
     const url = new URL(request.url);
@@ -208,6 +249,18 @@ export class RallyRoom {
     }
 
     return jsonResponse({ ok: true, hint: "Connect via WebSocket with Upgrade: websocket." });
+  }
+
+  async alarm() {
+    await this.ensureLoaded();
+    if (!this.data) return;
+    const arrivalAt = this.data.rally?.arrivalAt;
+    if (!Number.isFinite(arrivalAt)) return;
+    if (arrivalAt <= Date.now()) {
+      this.data.rally = null;
+      await this.persist();
+      this.broadcast();
+    }
   }
 }
 
